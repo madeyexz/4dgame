@@ -24,8 +24,10 @@ describe('entities', () => {
     crew?.update(0.16, 1.5, world);
     const after = crew?.snapshot();
 
-    expect(after?.trail.length).toBe(1);
-    expect(after && before ? distance4(before, after.position4) : 0).toBeGreaterThan(0.1);
+    expect(after?.trail.length).toBe(0);
+    expect(after && before ? distance4(before, after.position4) : 0).toBeGreaterThan(0.01);
+    expect(after?.parts.length).toBeGreaterThan(0);
+    expect(after?.links.length).toBeGreaterThan(0);
   });
 
   it('keeps drifting objects inside world bounds while they wander in 4D', () => {
@@ -53,7 +55,7 @@ describe('entities', () => {
     expect(snapshot.position4.z).toBeLessThanOrEqual(world.bounds.maxZ - 1.2);
     expect(snapshot.position4.w).toBeGreaterThanOrEqual(world.bounds.minW + 0.3);
     expect(snapshot.position4.w).toBeLessThanOrEqual(world.bounds.maxW - 0.3);
-    expect(snapshot.trail.length).toBeLessThanOrEqual(22);
+    expect(snapshot.trail.length).toBeLessThanOrEqual(4);
     expect(snapshot.trail.length).toBeGreaterThan(0);
   });
 });

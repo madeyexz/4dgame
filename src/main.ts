@@ -11,30 +11,28 @@ app.innerHTML = `
   <div class="app-shell">
     <canvas class="viewport" aria-label="4D voxel world renderer"></canvas>
     <div class="crosshair" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
     <div class="hud">
       <section class="hud-panel hud-panel--title">
         <p class="eyebrow">Blue-Space Fragment</p>
         <h1>The Ship Is Open</h1>
         <p class="copy">
-          Sealed walls still exist, but they no longer enclose anything. Shift along
-          <code>w</code>, rotate the strange planes, and watch bodies, bulkheads, and
-          drifting objects become visible from the fourth direction.
+          Every wall still exists — but nothing encloses anymore.
+          Drift along <code>w</code> and watch sealed rooms unfold,
+          bodies reveal their interior, objects phase through the slice.
         </p>
       </section>
       <section class="hud-grid">
-        <div class="hud-panel">
-          <h2>Status</h2>
+        <div class="hud-panel hud-panel--minimal">
           <div id="status"></div>
         </div>
-        <div class="hud-panel">
-          <h2>Entities</h2>
+        <div class="hud-panel hud-panel--minimal">
           <div id="entities"></div>
         </div>
       </section>
       <section class="hud-panel hud-panel--controls">
         <div class="hud-headline">
-          <h2>Controls</h2>
-          <button id="pointerLockButton" type="button">Click To Look Around</button>
+          <button id="pointerLockButton" type="button">Enter the Fragment</button>
         </div>
         <div id="controls"></div>
       </section>

@@ -2,6 +2,7 @@ import {
   applyViewTransform,
   clamp,
   project4Dto3D,
+  smoothstep,
   sub4,
   type Orientation4D,
   type Projection3D,
@@ -15,13 +16,34 @@ export type ProjectionViewState = {
 };
 
 export const RENDER_LIMITS = {
-  maxAbsW: 3.8,
-  maxDistance: 44,
-  maxX: 80,
-  maxY: 60,
-  maxZDepth: 140,
+  maxAbsW: 6.0,
+  maxDistance: 52,
+  maxX: 90,
+  maxY: 70,
+  maxZDepth: 160,
   minZDepth: 0.3,
 } as const;
+
+export type PhaseAppearance = {
+  /** Full opacity band — near w=0 */
+  solidAlpha: number;
+  /** Ghosted/faded band — mid-range w */
+  ghostAlpha: number;
+  /** Fringe/emissive edge band — far w */
+  fringeAlpha: number;
+  /** Scale modification from phase distance */
+  phaseScale: number;
+};
+
+export function computePhaseAppearance(localW: number): PhaseAppearance {
+  const aw = Math.abs(localW);
+  return {
+    solidAlpha: smoothstep(1.8, 0.0, aw),
+    ghostAlpha: smoothstep(5.0, 0.8, aw),
+    fringeAlpha: smoothstep(2.5, 4.2, aw) * smoothstep(6.0, 5.0, aw),
+    phaseScale: 1 - aw * 0.04,
+  };
+}
 
 export function projectRenderablePoint(
   point: Vec4,
@@ -57,5 +79,6 @@ export function projectRenderablePoint(
 }
 
 export function computeBlockBrightness(localW: number): number {
-  return clamp(1.08 - Math.abs(localW) * 0.12, 0.35, 1.1);
+  const phase = computePhaseAppearance(localW);
+  return clamp(phase.solidAlpha * 0.8 + phase.ghostAlpha * 0.3 + 0.15, 0.12, 1.1);
 }

@@ -29,7 +29,7 @@ describe('render4d', () => {
   });
 
   it('clips points outside the w band', () => {
-    expect(projectRenderablePoint(vec4(0, 0, -8, 4.2), defaultPlayer)).toBeNull();
+    expect(projectRenderablePoint(vec4(0, 0, -8, 6.5), defaultPlayer)).toBeNull();
   });
 
   it('clips points that are too far away in xyz distance', () => {
@@ -42,8 +42,8 @@ describe('render4d', () => {
   });
 
   it('dims blocks farther from the local w slice', () => {
-    expect(computeBlockBrightness(0)).toBeCloseTo(1.08, 10);
+    expect(computeBlockBrightness(0)).toBeCloseTo(1.1, 10);
     expect(computeBlockBrightness(2)).toBeLessThan(computeBlockBrightness(0));
-    expect(computeBlockBrightness(10)).toBe(0.35);
+    expect(computeBlockBrightness(10)).toBe(0.15);
   });
 });
