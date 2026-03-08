@@ -8,31 +8,18 @@ import {
   vec4,
 } from './engine/math4d.ts';
 import {
-  computeBlockBrightness,
+  computePhaseAppearance,
   projectRenderablePoint,
 } from './engine/render4d.ts';
 import {
   createEntities,
   type EntitySnapshot,
 } from './engine/entities.ts';
+import { VoxelWorld4D } from './engine/world4d.ts';
 import {
-  BlockMaterial,
-  MATERIAL_DEFS,
-  VoxelWorld4D,
-} from './engine/world4d.ts';
-
-type BlockMeshState = {
-  capacity: number;
-  mesh: THREE.InstancedMesh;
-  tint: THREE.Color;
-};
-
-type EntityView = {
-  core: THREE.Mesh;
-  group: THREE.Group;
-  line: THREE.Line;
-  shell: THREE.Mesh;
-};
+  loadSceneAssets,
+  type SceneAsset,
+} from './engine/assets.ts';
 
 type GameAppOptions = {
   canvas: HTMLCanvasElement;
@@ -124,8 +111,6 @@ class InputController {
     return [
       'BracketLeft',
       'BracketRight',
-      'ControlLeft',
-      'ControlRight',
       'KeyC',
       'KeyE',
       'KeyI',
@@ -153,8 +138,6 @@ export class GameApp {
   private readonly world = new VoxelWorld4D(7);
   private readonly entities = createEntities(this.world);
   private readonly input: InputController;
-  private readonly blockMeshes = new Map<BlockMaterial, BlockMeshState>();
-  private readonly entityViews = new Map<string, EntityView>();
   private lastFrameTime = performance.now();
   private readonly player: PlayerState = {
     orientation: {
@@ -167,28 +150,24 @@ export class GameApp {
     position4: vec4(0, 6.1, 34, 0),
     projectionDistance: 10.2,
   };
-  private readonly workingColor = new THREE.Color();
-  private readonly workingMatrix = new THREE.Matrix4();
-  private readonly workingQuaternion = new THREE.Quaternion();
-  private readonly workingScale = new THREE.Vector3();
   private readonly statusRows: string[] = [];
   private readonly entityRows: string[] = [];
   private readonly controlsMarkup = `
     <div class="control-list">
-      <span><code>W A S D</code> move around the opened hull</span>
-      <span><code>Space</code> rise</span>
-      <span><code>C</code> descend</span>
+      <span><code>W A S D</code> drift through the hull</span>
+      <span><code>Space / C</code> rise · descend</span>
       <span><code>Shift</code> accelerate</span>
-      <span><code>Mouse</code> look around</span>
-      <span><code>Q / E</code> drift along the hidden axis</span>
-      <span><code>I / K</code> rotate xw</span>
-      <span><code>J / L</code> rotate yw</span>
-      <span><code>U / O</code> rotate zw</span>
-      <span><code>[ / ]</code> change the 4D lens</span>
+      <span><code>Mouse</code> look</span>
+      <span><code>Q / E</code> shift along w</span>
+      <span><code>I K · J L · U O</code> rotate 4D planes</span>
+      <span><code>[ / ]</code> adjust lens</span>
     </div>
   `;
   private elapsed = 0;
   private lastHudUpdate = 0;
+  private phaseMotes: Vec4[] = [];
+  private phaseMotePoints: THREE.Points | null = null;
+  private sceneAssets: SceneAsset[] = [];
 
   constructor(private readonly options: GameAppOptions) {
     this.options.controlsElement.innerHTML = this.controlsMarkup;
@@ -200,10 +179,13 @@ export class GameApp {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor('#02050a');
+    this.renderer.setClearColor('#020408');
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog('#02050a', 26, 140);
+    this.scene.fog = new THREE.FogExp2('#020408', 0.008);
 
     this.camera = new THREE.PerspectiveCamera(
       72,
@@ -214,13 +196,26 @@ export class GameApp {
     this.camera.position.set(0, 0, 0);
 
     this.configureScene();
-    this.configureBlockMeshes();
+    this.configurePhaseMotes();
 
     window.addEventListener('resize', this.handleResize);
   }
 
   start(): void {
     this.renderer.setAnimationLoop(this.tick);
+    this.loadAssets();
+  }
+
+  private loadAssets(): void {
+    loadSceneAssets().then((assets) => {
+      this.sceneAssets = assets;
+      for (const asset of assets) {
+        if (asset.model) {
+          asset.model.visible = false;
+          this.scene.add(asset.model);
+        }
+      }
+    });
   }
 
   private readonly tick = () => {
@@ -231,9 +226,14 @@ export class GameApp {
 
     this.updatePlayer(dt);
     this.updateEntities(dt);
-    this.renderWorld();
-    this.renderEntities();
+    this.renderSceneAssets();
+    this.renderPhaseMotes();
     this.updateHud();
+
+    this.camera.rotation.order = 'YXZ';
+    this.camera.rotation.y = -this.player.orientation.yaw;
+    this.camera.rotation.x = this.player.orientation.pitch;
+
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -245,37 +245,45 @@ export class GameApp {
   };
 
   private configureScene(): void {
-    const ambient = new THREE.HemisphereLight('#f8fbff', '#121621', 1.9);
+    const ambient = new THREE.HemisphereLight('#c8d8f8', '#0a0e18', 0.9);
     this.scene.add(ambient);
 
-    const keyLight = new THREE.DirectionalLight('#d2ebff', 1.2);
+    const keyLight = new THREE.DirectionalLight('#b8d0f0', 0.6);
     keyLight.position.set(8, 10, 14);
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.PointLight('#ffb692', 42, 80, 2);
-    fillLight.position.set(-5, 6, -10);
-    this.scene.add(fillLight);
+    const lumenGlow1 = new THREE.PointLight('#60d8ff', 35, 60, 2);
+    lumenGlow1.position.set(0, 6, 0);
+    this.scene.add(lumenGlow1);
 
-    const ghostLight = new THREE.PointLight('#86e9ff', 28, 90, 2);
-    ghostLight.position.set(0, 8, 6);
-    this.scene.add(ghostLight);
+    const lumenGlow2 = new THREE.PointLight('#80e0ff', 20, 50, 2);
+    lumenGlow2.position.set(-4, 4, -8);
+    this.scene.add(lumenGlow2);
+
+    const lumenGlow3 = new THREE.PointLight('#40c8ff', 15, 45, 2);
+    lumenGlow3.position.set(5, 8, 6);
+    this.scene.add(lumenGlow3);
+
+    const warmLight = new THREE.PointLight('#ffb090', 18, 40, 2);
+    warmLight.position.set(-5, 5, -4);
+    this.scene.add(warmLight);
 
     const haze = new THREE.BufferGeometry();
-    const hazePositions = new Float32Array(700 * 3);
+    const hazePositions = new Float32Array(1200 * 3);
 
-    for (let index = 0; index < 700; index += 1) {
+    for (let index = 0; index < 1200; index += 1) {
       const stride = index * 3;
-      hazePositions[stride] = (Math.random() - 0.5) * 180;
-      hazePositions[stride + 1] = (Math.random() - 0.5) * 110;
-      hazePositions[stride + 2] = -Math.random() * 180 - 10;
+      hazePositions[stride] = (Math.random() - 0.5) * 220;
+      hazePositions[stride + 1] = (Math.random() - 0.5) * 140;
+      hazePositions[stride + 2] = -Math.random() * 200 - 10;
     }
 
     haze.setAttribute('position', new THREE.BufferAttribute(hazePositions, 3));
 
     const hazeMaterial = new THREE.PointsMaterial({
-      color: '#7daefb',
-      opacity: 0.28,
-      size: 0.22,
+      color: '#4080d0',
+      opacity: 0.18,
+      size: 0.15,
       transparent: true,
     });
 
@@ -283,46 +291,97 @@ export class GameApp {
     this.scene.add(hazeField);
   }
 
-  private configureBlockMeshes(): void {
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const materials: BlockMaterial[] = [
-      BlockMaterial.Hull,
-      BlockMaterial.Bulkhead,
-      BlockMaterial.Tissue,
-      BlockMaterial.Lumen,
-    ];
+  private configurePhaseMotes(): void {
+    this.phaseMotes = [];
 
-    for (const materialKey of materials) {
-      const materialDef = MATERIAL_DEFS[materialKey];
-      const material = new THREE.MeshStandardMaterial({
-        color: materialDef.baseColor,
-        emissive: materialDef.emissive ?? '#000000',
-        emissiveIntensity: materialDef.emissiveIntensity ?? 0,
-        metalness: materialDef.metalness,
-        opacity: materialDef.opacity,
-        roughness: materialDef.roughness,
-        transparent: materialDef.opacity < 1,
-        vertexColors: true,
-      });
-      const capacity =
-        materialKey === BlockMaterial.Hull
-          ? 7000
-          : materialKey === BlockMaterial.Bulkhead
-            ? 5200
-            : 2600;
-      const mesh = new THREE.InstancedMesh(geometry, material, capacity);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.frustumCulled = false;
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.count = 0;
+    for (let i = 0; i < 300; i += 1) {
+      this.phaseMotes.push(
+        vec4(
+          (Math.random() - 0.5) * 40,
+          Math.random() * 14 + 1,
+          (Math.random() - 0.5) * 40,
+          (Math.random() - 0.5) * 8,
+        ),
+      );
+    }
 
-      this.blockMeshes.set(materialKey, {
-        capacity,
-        mesh,
-        tint: new THREE.Color(materialDef.baseColor),
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(this.phaseMotes.length * 3);
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      color: '#90d8ff',
+      opacity: 0.5,
+      size: 0.12,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.phaseMotePoints = new THREE.Points(geometry, material);
+    this.phaseMotePoints.frustumCulled = false;
+    this.scene.add(this.phaseMotePoints);
+  }
+
+  private renderPhaseMotes(): void {
+    if (!this.phaseMotePoints) return;
+
+    const positions = this.phaseMotePoints.geometry.attributes.position as THREE.BufferAttribute;
+    let visible = 0;
+
+    for (const mote of this.phaseMotes) {
+      const projected = this.projectPoint(mote);
+      if (!projected) continue;
+
+      const phase = computePhaseAppearance(projected.localW);
+      if (phase.ghostAlpha < 0.05) continue;
+
+      positions.setXYZ(visible, projected.x, projected.y, projected.z);
+      visible += 1;
+    }
+
+    this.phaseMotePoints.geometry.setDrawRange(0, visible);
+    positions.needsUpdate = true;
+  }
+
+  private renderSceneAssets(): void {
+    for (const asset of this.sceneAssets) {
+      if (!asset.model) continue;
+
+      const projected = this.projectPoint(asset.position4);
+
+      if (!projected) {
+        asset.model.visible = false;
+        continue;
+      }
+
+      const phase = computePhaseAppearance(projected.localW);
+
+      if (phase.ghostAlpha < 0.02) {
+        asset.model.visible = false;
+        continue;
+      }
+
+      asset.model.visible = true;
+      asset.model.position.set(projected.x, projected.y, projected.z);
+
+      const s = asset.scale * projected.scale * phase.phaseScale;
+      asset.model.scale.setScalar(s);
+
+      asset.model.rotation.copy(asset.rotation);
+      asset.model.rotation.y += this.elapsed * 0.015;
+
+      const targetOpacity = asset.opacity * phase.ghostAlpha;
+      asset.model.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          for (const mat of materials) {
+            if (mat instanceof THREE.MeshStandardMaterial) {
+              mat.opacity = targetOpacity;
+            }
+          }
+        }
       });
-      this.scene.add(mesh);
     }
   }
 
@@ -336,10 +395,10 @@ export class GameApp {
     );
 
     const boost = this.input.isPressed('ShiftLeft') || this.input.isPressed('ShiftRight');
-    const moveSpeed = boost ? 14 : 8.5;
-    const verticalSpeed = boost ? 11 : 6;
-    const wSpeed = boost ? 3.6 : 2.2;
-    const rotationSpeed = 0.75;
+    const moveSpeed = boost ? 12 : 6;
+    const verticalSpeed = boost ? 9 : 4.5;
+    const wSpeed = boost ? 2.8 : 1.6;
+    const rotationSpeed = 0.6;
     const lensSpeed = 4;
 
     const forward = new THREE.Vector3(
@@ -428,186 +487,12 @@ export class GameApp {
         16,
       );
     }
-
-    this.player.position4.y = clamp(
-      this.player.position4.y,
-      this.world.bounds.minY + 1.5,
-      this.world.bounds.maxY + 8,
-    );
   }
 
   private updateEntities(dt: number): void {
     for (const entity of this.entities) {
       entity.update(dt, this.elapsed, this.world);
     }
-  }
-
-  private renderWorld(): void {
-    const counts: Record<BlockMaterial, number> = {
-      [BlockMaterial.Bulkhead]: 0,
-      [BlockMaterial.Hull]: 0,
-      [BlockMaterial.Lumen]: 0,
-      [BlockMaterial.Tissue]: 0,
-    };
-
-    for (const state of this.blockMeshes.values()) {
-      state.mesh.count = 0;
-    }
-
-    this.world.forEachCandidate(this.player.position4.w, (cell) => {
-      const meshState = this.blockMeshes.get(cell.material);
-
-      if (!meshState) {
-        return;
-      }
-
-      const index = counts[cell.material];
-
-      if (index >= meshState.capacity) {
-        return;
-      }
-
-      const projected = this.projectPoint(cell.position4);
-
-      if (!projected) {
-        return;
-      }
-
-      const brightness = computeBlockBrightness(projected.localW);
-      this.workingColor.copy(meshState.tint).multiplyScalar(brightness);
-      this.composeMatrix(projected, cell.material === BlockMaterial.Hull ? 0.96 : 0.9);
-
-      meshState.mesh.setMatrixAt(index, this.workingMatrix);
-      meshState.mesh.setColorAt(index, this.workingColor);
-      counts[cell.material] += 1;
-    });
-
-    for (const [material, state] of this.blockMeshes) {
-      state.mesh.count = counts[material];
-      state.mesh.instanceMatrix.needsUpdate = true;
-      if (state.mesh.instanceColor) {
-        state.mesh.instanceColor.needsUpdate = true;
-      }
-    }
-  }
-
-  private renderEntities(): void {
-    for (const entity of this.entities) {
-      const snapshot = entity.snapshot();
-      const view = this.getEntityView(snapshot);
-      const projected = this.projectPoint(snapshot.position4);
-
-      if (!projected) {
-        view.group.visible = false;
-        view.line.visible = false;
-        continue;
-      }
-
-      view.group.visible = true;
-      view.group.position.set(projected.x, projected.y, projected.z);
-      view.shell.scale.setScalar(snapshot.radius * projected.scale * 1.2);
-      view.core.scale.setScalar(
-        snapshot.radius * projected.scale * (snapshot.kind === 'crew' ? 0.42 : 0.62),
-      );
-      view.group.rotation.x = this.elapsed * (snapshot.kind === 'crew' ? 0.18 : 0.42);
-      view.group.rotation.y = this.elapsed * (snapshot.kind === 'crew' ? 0.34 : 0.58);
-
-      const projectedTrail = snapshot.trail
-        .map((point) => this.projectPoint(point))
-        .filter((point): point is Projection3D => point !== null)
-        .map((point) => new THREE.Vector3(point.x, point.y, point.z));
-
-      if (projectedTrail.length >= 2) {
-        view.line.visible = true;
-        view.line.geometry.dispose();
-        view.line.geometry = new THREE.BufferGeometry().setFromPoints(projectedTrail);
-      } else {
-        view.line.visible = false;
-      }
-    }
-  }
-
-  private getEntityView(snapshot: EntitySnapshot): EntityView {
-    const existing = this.entityViews.get(snapshot.id);
-
-    if (existing) {
-      return existing;
-    }
-
-    const shellGeometry =
-      snapshot.kind === 'crew'
-        ? new THREE.IcosahedronGeometry(1, 1)
-        : new THREE.OctahedronGeometry(1, 0);
-    const coreGeometry =
-      snapshot.kind === 'crew'
-        ? new THREE.SphereGeometry(0.6, 18, 18)
-        : new THREE.BoxGeometry(0.8, 0.8, 0.8);
-
-    const shellMaterial =
-      snapshot.kind === 'crew'
-        ? new THREE.MeshStandardMaterial({
-            color: '#dbe7ff',
-            emissive: snapshot.color,
-            emissiveIntensity: 0.3,
-            metalness: 0.06,
-            opacity: 0.16,
-            roughness: 0.22,
-            transparent: true,
-            wireframe: true,
-          })
-        : new THREE.MeshStandardMaterial({
-            color: '#a9d9ff',
-            emissive: snapshot.color,
-            emissiveIntensity: 0.48,
-            metalness: 0.45,
-            opacity: 0.22,
-            roughness: 0.25,
-            transparent: true,
-          });
-
-    const coreMaterial = new THREE.MeshStandardMaterial({
-      color: snapshot.color,
-      emissive: snapshot.color,
-      emissiveIntensity: snapshot.kind === 'crew' ? 1.15 : 0.75,
-      metalness: 0.06,
-      roughness: 0.32,
-    });
-
-    const shell = new THREE.Mesh(shellGeometry, shellMaterial);
-    shell.frustumCulled = false;
-    const core = new THREE.Mesh(coreGeometry, coreMaterial);
-    core.frustumCulled = false;
-
-    const group = new THREE.Group();
-    group.add(shell);
-    group.add(core);
-    group.frustumCulled = false;
-
-    const trailMaterial = new THREE.LineBasicMaterial({
-      color: snapshot.color,
-      opacity: snapshot.kind === 'crew' ? 0.28 : 0.52,
-      transparent: true,
-    });
-    const line = new THREE.Line(new THREE.BufferGeometry(), trailMaterial);
-    line.frustumCulled = false;
-
-    this.scene.add(line);
-    this.scene.add(group);
-
-    const view = { core, group, line, shell };
-    this.entityViews.set(snapshot.id, view);
-
-    return view;
-  }
-
-  private composeMatrix(projected: Projection3D, baseScale: number): void {
-    this.workingScale.setScalar(baseScale * projected.scale);
-    this.workingQuaternion.identity();
-    this.workingMatrix.compose(
-      new THREE.Vector3(projected.x, projected.y, projected.z),
-      this.workingQuaternion,
-      this.workingScale,
-    );
   }
 
   private projectPoint(point: Vec4): Projection3D | null {
@@ -623,28 +508,19 @@ export class GameApp {
     this.statusRows.length = 0;
     this.entityRows.length = 0;
 
-    this.statusRows.push(this.renderMetric('x y z', this.formatVec3(this.player.position4)));
-    this.statusRows.push(this.renderMetric('w', this.player.position4.w.toFixed(2)));
-    this.statusRows.push(this.renderMetric('lens d', this.player.projectionDistance.toFixed(2)));
-    this.statusRows.push(
-      this.renderMetric(
-        'planes xw / yw / zw',
-        `${this.player.orientation.xw.toFixed(2)} / ${this.player.orientation.yw.toFixed(2)} / ${this.player.orientation.zw.toFixed(2)}`,
-      ),
-    );
+    this.statusRows.push(this.renderMetric('w-axis', this.player.position4.w.toFixed(2)));
+    this.statusRows.push(this.renderMetric('lens', this.player.projectionDistance.toFixed(1)));
 
-    const crewCount = this.entities.filter((entity) => entity.kind === 'crew').length;
-    const driftCount = this.entities.length - crewCount;
     const nearest = this.findNearestEntity();
 
-    this.entityRows.push(this.renderMetric('crew opened', String(crewCount)));
-    this.entityRows.push(this.renderMetric('phase drift', String(driftCount)));
-    this.entityRows.push(
-      this.renderMetric(
-        'nearest',
-        nearest ? `${nearest.label} · ${distance4(nearest.position4, this.player.position4).toFixed(1)}u` : 'none',
-      ),
-    );
+    if (nearest) {
+      this.entityRows.push(
+        this.renderMetric(
+          'nearest',
+          `${nearest.label} · ${distance4(nearest.position4, this.player.position4).toFixed(1)}u`,
+        ),
+      );
+    }
 
     this.options.statusElement.innerHTML = this.statusRows.join('');
     this.options.entityElement.innerHTML = this.entityRows.join('');
@@ -657,10 +533,6 @@ export class GameApp {
         <span class="metric-value">${value}</span>
       </div>
     `;
-  }
-
-  private formatVec3(position: Vec4): string {
-    return `${position.x.toFixed(1)} · ${position.y.toFixed(1)} · ${position.z.toFixed(1)}`;
   }
 
   private findNearestEntity(): EntitySnapshot | null {
