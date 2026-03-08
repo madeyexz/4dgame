@@ -28,8 +28,10 @@ type BlockMeshState = {
 };
 
 type EntityView = {
+  core: THREE.Mesh;
+  group: THREE.Group;
   line: THREE.Line;
-  mesh: THREE.Mesh;
+  shell: THREE.Mesh;
 };
 
 type GameAppOptions = {
@@ -156,14 +158,14 @@ export class GameApp {
   private lastFrameTime = performance.now();
   private readonly player: PlayerState = {
     orientation: {
-      pitch: -0.18,
-      xw: 0.16,
+      pitch: -0.08,
+      xw: 0.14,
       yaw: 0,
-      yw: -0.12,
-      zw: 0.22,
+      yw: -0.16,
+      zw: 0.28,
     },
-    position4: vec4(0, 8.5, 28, 0),
-    projectionDistance: 9.5,
+    position4: vec4(0, 6.1, 34, 0),
+    projectionDistance: 10.2,
   };
   private readonly workingColor = new THREE.Color();
   private readonly workingMatrix = new THREE.Matrix4();
@@ -173,16 +175,16 @@ export class GameApp {
   private readonly entityRows: string[] = [];
   private readonly controlsMarkup = `
     <div class="control-list">
-      <span><code>W A S D</code> drift through x/z</span>
+      <span><code>W A S D</code> move around the opened hull</span>
       <span><code>Space</code> rise</span>
       <span><code>C</code> descend</span>
       <span><code>Shift</code> accelerate</span>
       <span><code>Mouse</code> look around</span>
-      <span><code>Q / E</code> move along w</span>
+      <span><code>Q / E</code> drift along the hidden axis</span>
       <span><code>I / K</code> rotate xw</span>
       <span><code>J / L</code> rotate yw</span>
       <span><code>U / O</code> rotate zw</span>
-      <span><code>[ / ]</code> change 4D lens distance</span>
+      <span><code>[ / ]</code> change the 4D lens</span>
     </div>
   `;
   private elapsed = 0;
@@ -198,10 +200,10 @@ export class GameApp {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor('#07111c');
+    this.renderer.setClearColor('#02050a');
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog('#07111c', 32, 120);
+    this.scene.fog = new THREE.Fog('#02050a', 26, 140);
 
     this.camera = new THREE.PerspectiveCamera(
       72,
@@ -243,58 +245,71 @@ export class GameApp {
   };
 
   private configureScene(): void {
-    const ambient = new THREE.HemisphereLight('#f4fbff', '#102134', 2.5);
+    const ambient = new THREE.HemisphereLight('#f8fbff', '#121621', 1.9);
     this.scene.add(ambient);
 
-    const keyLight = new THREE.DirectionalLight('#fff6dd', 2);
-    keyLight.position.set(6, 12, 8);
+    const keyLight = new THREE.DirectionalLight('#d2ebff', 1.2);
+    keyLight.position.set(8, 10, 14);
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.PointLight('#6bc4ff', 55, 70, 2);
-    fillLight.position.set(-10, 10, -12);
+    const fillLight = new THREE.PointLight('#ffb692', 42, 80, 2);
+    fillLight.position.set(-5, 6, -10);
     this.scene.add(fillLight);
 
-    const stars = new THREE.BufferGeometry();
-    const starPositions = new Float32Array(450 * 3);
+    const ghostLight = new THREE.PointLight('#86e9ff', 28, 90, 2);
+    ghostLight.position.set(0, 8, 6);
+    this.scene.add(ghostLight);
 
-    for (let index = 0; index < 450; index += 1) {
+    const haze = new THREE.BufferGeometry();
+    const hazePositions = new Float32Array(700 * 3);
+
+    for (let index = 0; index < 700; index += 1) {
       const stride = index * 3;
-      starPositions[stride] = (Math.random() - 0.5) * 180;
-      starPositions[stride + 1] = (Math.random() - 0.5) * 120;
-      starPositions[stride + 2] = -Math.random() * 160 - 15;
+      hazePositions[stride] = (Math.random() - 0.5) * 180;
+      hazePositions[stride + 1] = (Math.random() - 0.5) * 110;
+      hazePositions[stride + 2] = -Math.random() * 180 - 10;
     }
 
-    stars.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    haze.setAttribute('position', new THREE.BufferAttribute(hazePositions, 3));
 
-    const starMaterial = new THREE.PointsMaterial({
-      color: '#8ecbff',
-      opacity: 0.45,
-      size: 0.16,
+    const hazeMaterial = new THREE.PointsMaterial({
+      color: '#7daefb',
+      opacity: 0.28,
+      size: 0.22,
       transparent: true,
     });
 
-    const starField = new THREE.Points(stars, starMaterial);
-    this.scene.add(starField);
+    const hazeField = new THREE.Points(haze, hazeMaterial);
+    this.scene.add(hazeField);
   }
 
   private configureBlockMeshes(): void {
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const materials: BlockMaterial[] = [
-      BlockMaterial.Grass,
-      BlockMaterial.Stone,
-      BlockMaterial.Frost,
-      BlockMaterial.Ember,
+      BlockMaterial.Hull,
+      BlockMaterial.Bulkhead,
+      BlockMaterial.Tissue,
+      BlockMaterial.Lumen,
     ];
 
     for (const materialKey of materials) {
       const materialDef = MATERIAL_DEFS[materialKey];
       const material = new THREE.MeshStandardMaterial({
         color: materialDef.baseColor,
+        emissive: materialDef.emissive ?? '#000000',
+        emissiveIntensity: materialDef.emissiveIntensity ?? 0,
         metalness: materialDef.metalness,
+        opacity: materialDef.opacity,
         roughness: materialDef.roughness,
+        transparent: materialDef.opacity < 1,
         vertexColors: true,
       });
-      const capacity = materialKey === BlockMaterial.Stone ? 5200 : 3400;
+      const capacity =
+        materialKey === BlockMaterial.Hull
+          ? 7000
+          : materialKey === BlockMaterial.Bulkhead
+            ? 5200
+            : 2600;
       const mesh = new THREE.InstancedMesh(geometry, material, capacity);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
@@ -429,10 +444,10 @@ export class GameApp {
 
   private renderWorld(): void {
     const counts: Record<BlockMaterial, number> = {
-      [BlockMaterial.Ember]: 0,
-      [BlockMaterial.Frost]: 0,
-      [BlockMaterial.Grass]: 0,
-      [BlockMaterial.Stone]: 0,
+      [BlockMaterial.Bulkhead]: 0,
+      [BlockMaterial.Hull]: 0,
+      [BlockMaterial.Lumen]: 0,
+      [BlockMaterial.Tissue]: 0,
     };
 
     for (const state of this.blockMeshes.values()) {
@@ -460,7 +475,7 @@ export class GameApp {
 
       const brightness = computeBlockBrightness(projected.localW);
       this.workingColor.copy(meshState.tint).multiplyScalar(brightness);
-      this.composeMatrix(projected, 0.92);
+      this.composeMatrix(projected, cell.material === BlockMaterial.Hull ? 0.96 : 0.9);
 
       meshState.mesh.setMatrixAt(index, this.workingMatrix);
       meshState.mesh.setColorAt(index, this.workingColor);
@@ -483,16 +498,19 @@ export class GameApp {
       const projected = this.projectPoint(snapshot.position4);
 
       if (!projected) {
-        view.mesh.visible = false;
+        view.group.visible = false;
         view.line.visible = false;
         continue;
       }
 
-      view.mesh.visible = true;
-      view.mesh.position.set(projected.x, projected.y, projected.z);
-      view.mesh.scale.setScalar(snapshot.radius * projected.scale);
-      view.mesh.rotation.x = this.elapsed * (snapshot.kind === 'anomaly' ? 0.6 : 0.2);
-      view.mesh.rotation.y = this.elapsed * (snapshot.kind === 'anomaly' ? 0.4 : 0.35);
+      view.group.visible = true;
+      view.group.position.set(projected.x, projected.y, projected.z);
+      view.shell.scale.setScalar(snapshot.radius * projected.scale * 1.2);
+      view.core.scale.setScalar(
+        snapshot.radius * projected.scale * (snapshot.kind === 'crew' ? 0.42 : 0.62),
+      );
+      view.group.rotation.x = this.elapsed * (snapshot.kind === 'crew' ? 0.18 : 0.42);
+      view.group.rotation.y = this.elapsed * (snapshot.kind === 'crew' ? 0.34 : 0.58);
 
       const projectedTrail = snapshot.trail
         .map((point) => this.projectPoint(point))
@@ -516,43 +534,67 @@ export class GameApp {
       return existing;
     }
 
-    const geometry =
-      snapshot.kind === 'anomaly'
+    const shellGeometry =
+      snapshot.kind === 'crew'
         ? new THREE.IcosahedronGeometry(1, 1)
         : new THREE.OctahedronGeometry(1, 0);
+    const coreGeometry =
+      snapshot.kind === 'crew'
+        ? new THREE.SphereGeometry(0.6, 18, 18)
+        : new THREE.BoxGeometry(0.8, 0.8, 0.8);
 
-    const material =
-      snapshot.kind === 'anomaly'
+    const shellMaterial =
+      snapshot.kind === 'crew'
         ? new THREE.MeshStandardMaterial({
-            color: snapshot.color,
+            color: '#dbe7ff',
             emissive: snapshot.color,
-            emissiveIntensity: 1.5,
-            metalness: 0.08,
-            roughness: 0.3,
+            emissiveIntensity: 0.3,
+            metalness: 0.06,
+            opacity: 0.16,
+            roughness: 0.22,
+            transparent: true,
+            wireframe: true,
           })
         : new THREE.MeshStandardMaterial({
-            color: snapshot.color,
-            emissive: '#1d2e39',
-            emissiveIntensity: 0.25,
-            metalness: 0.04,
-            roughness: 0.66,
+            color: '#a9d9ff',
+            emissive: snapshot.color,
+            emissiveIntensity: 0.48,
+            metalness: 0.45,
+            opacity: 0.22,
+            roughness: 0.25,
+            transparent: true,
           });
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.frustumCulled = false;
+    const coreMaterial = new THREE.MeshStandardMaterial({
+      color: snapshot.color,
+      emissive: snapshot.color,
+      emissiveIntensity: snapshot.kind === 'crew' ? 1.15 : 0.75,
+      metalness: 0.06,
+      roughness: 0.32,
+    });
+
+    const shell = new THREE.Mesh(shellGeometry, shellMaterial);
+    shell.frustumCulled = false;
+    const core = new THREE.Mesh(coreGeometry, coreMaterial);
+    core.frustumCulled = false;
+
+    const group = new THREE.Group();
+    group.add(shell);
+    group.add(core);
+    group.frustumCulled = false;
 
     const trailMaterial = new THREE.LineBasicMaterial({
       color: snapshot.color,
-      opacity: snapshot.kind === 'anomaly' ? 0.55 : 0.25,
+      opacity: snapshot.kind === 'crew' ? 0.28 : 0.52,
       transparent: true,
     });
     const line = new THREE.Line(new THREE.BufferGeometry(), trailMaterial);
     line.frustumCulled = false;
 
     this.scene.add(line);
-    this.scene.add(mesh);
+    this.scene.add(group);
 
-    const view = { line, mesh };
+    const view = { core, group, line, shell };
     this.entityViews.set(snapshot.id, view);
 
     return view;
@@ -586,17 +628,17 @@ export class GameApp {
     this.statusRows.push(this.renderMetric('lens d', this.player.projectionDistance.toFixed(2)));
     this.statusRows.push(
       this.renderMetric(
-        'rot xw / yw / zw',
+        'planes xw / yw / zw',
         `${this.player.orientation.xw.toFixed(2)} / ${this.player.orientation.yw.toFixed(2)} / ${this.player.orientation.zw.toFixed(2)}`,
       ),
     );
 
-    const anomalyCount = this.entities.filter((entity) => entity.kind === 'anomaly').length;
-    const wildlifeCount = this.entities.length - anomalyCount;
+    const crewCount = this.entities.filter((entity) => entity.kind === 'crew').length;
+    const driftCount = this.entities.length - crewCount;
     const nearest = this.findNearestEntity();
 
-    this.entityRows.push(this.renderMetric('anomalies', String(anomalyCount)));
-    this.entityRows.push(this.renderMetric('wildlife', String(wildlifeCount)));
+    this.entityRows.push(this.renderMetric('crew opened', String(crewCount)));
+    this.entityRows.push(this.renderMetric('phase drift', String(driftCount)));
     this.entityRows.push(
       this.renderMetric(
         'nearest',

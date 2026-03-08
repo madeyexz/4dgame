@@ -11,7 +11,7 @@ import {
 } from './math4d.ts';
 import { type WorldBounds4D, type VoxelWorld4D } from './world4d.ts';
 
-export type EntityKind = 'anomaly' | 'wildlife';
+export type EntityKind = 'crew' | 'drifter';
 
 export type EntitySnapshot = {
   color: string;
@@ -64,24 +64,30 @@ abstract class BaseEntity implements Entity4D {
   abstract update(dt: number, elapsed: number, world: VoxelWorld4D): void;
 }
 
-class ScriptedAnomaly extends BaseEntity {
+class ExposedCrew extends BaseEntity {
   constructor(
     id: string,
     label: string,
     color: string,
     radius: number,
-    private readonly motion: (elapsed: number) => Vec4,
+    private readonly anchor: Vec4,
+    private readonly phase: number,
   ) {
-    super(id, 'anomaly', label, motion(0), color, radius);
+    super(id, 'crew', label, anchor, color, radius);
   }
 
   update(_dt: number, elapsed: number): void {
-    this.position = this.motion(elapsed);
-    this.pushTrail(this.position, 28);
+    this.position = vec4(
+      this.anchor.x + Math.sin(elapsed * 0.4 + this.phase) * 0.9,
+      this.anchor.y + Math.sin(elapsed * 0.63 + this.phase) * 0.35,
+      this.anchor.z + Math.cos(elapsed * 0.37 + this.phase) * 0.8,
+      this.anchor.w + Math.sin(elapsed * 0.78 + this.phase) * 1.8,
+    );
+    this.pushTrail(this.position, 18);
   }
 }
 
-class AmbientWildlife extends BaseEntity {
+class PhaseDrifter extends BaseEntity {
   private target: Vec4;
   private velocity = vec4(0, 0, 0, 0);
   private retargetIn = 0;
@@ -94,32 +100,32 @@ class AmbientWildlife extends BaseEntity {
     start: Vec4,
     target: Vec4,
   ) {
-    super(id, 'wildlife', label, start, color, radius);
+    super(id, 'drifter', label, start, color, radius);
     this.target = target;
   }
 
   update(dt: number, elapsed: number, world: VoxelWorld4D): void {
     this.retargetIn -= dt;
 
-    if (this.retargetIn <= 0 || distance4(this.position, this.target) < 1.4) {
+    if (this.retargetIn <= 0 || distance4(this.position, this.target) < 1.6) {
       this.target = this.pickTarget(world.bounds, elapsed);
-      this.retargetIn = 1.8 + ((elapsed * 0.37 + this.radius) % 1.4);
+      this.retargetIn = 1.4 + ((elapsed * 0.41 + this.radius) % 1.3);
     }
 
-    const desired = scale4(normalize4(sub4(this.target, this.position)), 2.6);
-    this.velocity = lerp4(this.velocity, desired, clamp(dt * 1.6, 0, 1));
+    const desired = scale4(normalize4(sub4(this.target, this.position)), 3.6);
+    this.velocity = lerp4(this.velocity, desired, clamp(dt * 1.9, 0, 1));
     this.position = add4(this.position, scale4(this.velocity, dt));
-    this.position = clampToBounds(this.position, world.bounds, 1);
-    this.pushTrail(this.position, 12);
+    this.position = clampToBounds(this.position, world.bounds, 1.2);
+    this.pushTrail(this.position, 22);
   }
 
   private pickTarget(bounds: WorldBounds4D, elapsed: number): Vec4 {
-    const base = elapsed * 0.7 + this.radius * 9.13;
+    const base = elapsed * 0.85 + this.radius * 11.7;
     return vec4(
-      mapSinToRange(base * 0.91, bounds.minX + 2, bounds.maxX - 2),
-      mapSinToRange(base * 1.21, 3, bounds.maxY - 1),
-      mapSinToRange(base * 1.03 + 1.7, bounds.minZ + 2, bounds.maxZ - 2),
-      mapSinToRange(base * 0.77 + 3.3, bounds.minW + 1, bounds.maxW - 1),
+      mapSinToRange(base * 0.79 + 1.1, bounds.minX + 3, bounds.maxX - 3),
+      mapSinToRange(base * 1.07, 2.5, bounds.maxY - 1.5),
+      mapSinToRange(base * 0.92 + 2.8, bounds.minZ + 5, bounds.maxZ - 5),
+      mapSinToRange(base * 1.44 + 4.1, bounds.minW + 0.7, bounds.maxW - 0.7),
     );
   }
 }
@@ -138,94 +144,68 @@ function mapSinToRange(value: number, min: number, max: number): number {
   return min + (max - min) * normalized;
 }
 
-export function createEntities(world: VoxelWorld4D): Entity4D[] {
-  const { bounds } = world;
-
-  const entities: Entity4D[] = [
-    new ScriptedAnomaly(
-      'anomaly-helix',
-      'helix choir',
-      '#7bd6ff',
-      0.8,
-      (elapsed) =>
-        vec4(
-          Math.sin(elapsed * 0.68) * 7.8,
-          7 + Math.sin(elapsed * 1.12) * 2.8,
-          Math.cos(elapsed * 0.68) * 7.8,
-          Math.sin(elapsed * 0.48) * 2.7,
-        ),
+export function createEntities(_world: VoxelWorld4D): Entity4D[] {
+  const crew: Entity4D[] = [
+    new ExposedCrew(
+      'crew-medic',
+      'medic, fully open',
+      '#ffd1c2',
+      0.56,
+      vec4(-5, 4.2, -9, -0.6),
+      0.2,
     ),
-    new ScriptedAnomaly(
-      'anomaly-lance',
-      'ember lance',
-      '#ff9457',
-      0.65,
-      (elapsed) =>
-        vec4(
-          Math.sin(elapsed * 0.94) * 9,
-          4.4 + Math.cos(elapsed * 0.71) * 2.2,
-          -4 + Math.sin(elapsed * 0.52 + 1.3) * 6,
-          Math.cos(elapsed * 0.94 + 0.7) * 2.4,
-        ),
+    new ExposedCrew(
+      'crew-pilot',
+      'pilot, vascular shell',
+      '#c7dfff',
+      0.6,
+      vec4(5, 4.4, -4, 0.8),
+      1.4,
     ),
-    new ScriptedAnomaly(
-      'anomaly-orbit',
-      'bloom knot',
-      '#d6afff',
-      0.95,
-      (elapsed) =>
-        vec4(
-          Math.sin(elapsed * 0.43 + 1.1) * 5.5,
-          6 + Math.sin(elapsed * 0.89 + 0.6) * 3.4,
-          Math.cos(elapsed * 0.57 + 2.1) * 5.5,
-          Math.sin(elapsed * 0.76 + 2.7) * 2.9,
-        ),
+    new ExposedCrew(
+      'crew-engineer',
+      'engineer, organs visible',
+      '#ffd0ea',
+      0.58,
+      vec4(-4, 7.2, 4, -1.2),
+      2.1,
+    ),
+    new ExposedCrew(
+      'crew-scout',
+      'scout, skeleton in phase',
+      '#c9ffe1',
+      0.54,
+      vec4(4, 7.1, 10, 1.1),
+      2.9,
     ),
   ];
 
-  const wildlifeSpecs = [
-    {
-      color: '#b8ffcf',
-      label: 'reed glider',
-      radius: 0.34,
-      start: vec4(bounds.minX + 4, 5, bounds.minZ + 4, -1.8),
-      target: vec4(bounds.maxX - 4, 6, bounds.maxZ - 4, 1.4),
-    },
-    {
-      color: '#f8ffad',
-      label: 'thread moth',
-      radius: 0.3,
-      start: vec4(-5, 7, 2, 2.1),
-      target: vec4(4, 4, -6, -1.7),
-    },
-    {
-      color: '#b6e1ff',
-      label: 'phase heron',
-      radius: 0.36,
-      start: vec4(6, 6, -5, -2.2),
-      target: vec4(-6, 8, 3, 2.2),
-    },
-    {
-      color: '#ffc4f7',
-      label: 'glass koi',
-      radius: 0.32,
-      start: vec4(-2, 4, 6, 0.8),
-      target: vec4(7, 5, -2, -0.9),
-    },
+  const drifters: Entity4D[] = [
+    new PhaseDrifter(
+      'drifter-crate',
+      'locker fragment',
+      '#8be9ff',
+      0.48,
+      vec4(-8, 5, 8, -2.4),
+      vec4(6, 6, -10, 2.2),
+    ),
+    new PhaseDrifter(
+      'drifter-gurney',
+      'gurney that leaves the slice',
+      '#ffe18f',
+      0.52,
+      vec4(7, 3.5, -7, 2.1),
+      vec4(-7, 5.5, 9, -2.1),
+    ),
+    new PhaseDrifter(
+      'drifter-core',
+      'unsealed instrument core',
+      '#9fb4ff',
+      0.44,
+      vec4(0, 8, 2, 0.4),
+      vec4(4, 4.5, -12, -2.4),
+    ),
   ];
 
-  wildlifeSpecs.forEach((spec, index) => {
-    entities.push(
-      new AmbientWildlife(
-        `wildlife-${index}`,
-        spec.label,
-        spec.color,
-        spec.radius,
-        spec.start,
-        spec.target,
-      ),
-    );
-  });
-
-  return entities;
+  return [...crew, ...drifters];
 }

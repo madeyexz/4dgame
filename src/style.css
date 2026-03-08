@@ -2,9 +2,9 @@
   font-family: 'Trebuchet MS', 'Gill Sans', sans-serif;
   color: #e9f2ff;
   background:
-    radial-gradient(circle at top, rgba(84, 171, 255, 0.18), transparent 38%),
-    radial-gradient(circle at 20% 20%, rgba(255, 153, 102, 0.12), transparent 25%),
-    linear-gradient(180deg, #08121d 0%, #03070b 100%);
+    radial-gradient(circle at top, rgba(88, 144, 232, 0.24), transparent 38%),
+    radial-gradient(circle at 18% 16%, rgba(255, 170, 130, 0.12), transparent 24%),
+    linear-gradient(180deg, #050b13 0%, #010205 100%);
   color-scheme: dark;
   font-synthesis: none;
   line-height: 1.5;
@@ -85,8 +85,8 @@ button:hover {
   content: '';
   position: absolute;
   inset: 50%;
-  background: rgba(210, 241, 255, 0.72);
-  box-shadow: 0 0 10px rgba(114, 199, 255, 0.34);
+  background: rgba(255, 222, 199, 0.72);
+  box-shadow: 0 0 12px rgba(255, 146, 92, 0.28);
 }
 
 .crosshair::before {
@@ -120,8 +120,8 @@ button:hover {
 
 .hud-panel {
   pointer-events: auto;
-  background: linear-gradient(180deg, rgba(11, 19, 31, 0.78), rgba(6, 12, 20, 0.6));
-  border: 1px solid rgba(144, 206, 255, 0.16);
+  background: linear-gradient(180deg, rgba(8, 12, 21, 0.82), rgba(4, 7, 13, 0.62));
+  border: 1px solid rgba(165, 205, 255, 0.14);
   border-radius: 20px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(18px);
@@ -138,6 +138,7 @@ button:hover {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: clamp(2rem, 4vw, 3rem);
   letter-spacing: 0.01em;
+  line-height: 0.95;
 }
 
 .hud-panel h2 {
@@ -153,7 +154,7 @@ button:hover {
 }
 
 .eyebrow {
-  color: #8bbfff;
+  color: #96bfff;
   font-size: 0.72rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -185,7 +186,7 @@ button:hover {
 }
 
 .metric-label {
-  color: rgba(181, 212, 235, 0.74);
+  color: rgba(187, 209, 233, 0.66);
   font-size: 0.84rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -200,7 +201,7 @@ button:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem 1.1rem;
-  color: rgba(231, 240, 255, 0.86);
+  color: rgba(231, 240, 255, 0.82);
 }
 
 .control-list span {

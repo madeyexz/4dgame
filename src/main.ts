@@ -13,12 +13,12 @@ app.innerHTML = `
     <div class="crosshair" aria-hidden="true"></div>
     <div class="hud">
       <section class="hud-panel hud-panel--title">
-        <p class="eyebrow">Projected 4D Voxel Prototype</p>
-        <h1>Phasefield</h1>
+        <p class="eyebrow">Blue-Space Fragment</p>
+        <h1>The Ship Is Open</h1>
         <p class="copy">
-          Fly through a voxel world embedded in 4D space. Shift along <code>w</code>,
-          rotate the strange planes, and watch anomalies and wildlife phase in and out
-          of the visible universe.
+          Sealed walls still exist, but they no longer enclose anything. Shift along
+          <code>w</code>, rotate the strange planes, and watch bodies, bulkheads, and
+          drifting objects become visible from the fourth direction.
         </p>
       </section>
       <section class="hud-grid">

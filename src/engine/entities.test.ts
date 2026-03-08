@@ -5,55 +5,55 @@ import { createEntities } from './entities.ts';
 import { VoxelWorld4D } from './world4d.ts';
 
 describe('entities', () => {
-  it('creates the expected anomaly and wildlife population', () => {
+  it('creates the expected exposed-crew and drifter population', () => {
     const entities = createEntities(new VoxelWorld4D(7));
-    const anomalyCount = entities.filter((entity) => entity.kind === 'anomaly').length;
-    const wildlifeCount = entities.filter((entity) => entity.kind === 'wildlife').length;
+    const crewCount = entities.filter((entity) => entity.kind === 'crew').length;
+    const drifterCount = entities.filter((entity) => entity.kind === 'drifter').length;
 
-    expect(anomalyCount).toBe(3);
-    expect(wildlifeCount).toBe(4);
+    expect(crewCount).toBe(4);
+    expect(drifterCount).toBe(3);
   });
 
-  it('moves scripted anomalies along deterministic paths and records trails', () => {
+  it('moves exposed crew along deterministic phase paths and records trails', () => {
     const world = new VoxelWorld4D(7);
-    const anomaly = createEntities(world).find((entity) => entity.kind === 'anomaly');
+    const crew = createEntities(world).find((entity) => entity.kind === 'crew');
 
-    expect(anomaly).toBeDefined();
+    expect(crew).toBeDefined();
 
-    const before = anomaly?.snapshot().position4;
-    anomaly?.update(0.16, 1.5, world);
-    const after = anomaly?.snapshot();
+    const before = crew?.snapshot().position4;
+    crew?.update(0.16, 1.5, world);
+    const after = crew?.snapshot();
 
     expect(after?.trail.length).toBe(1);
     expect(after && before ? distance4(before, after.position4) : 0).toBeGreaterThan(0.1);
   });
 
-  it('keeps wildlife inside world bounds while they wander in 4D', () => {
+  it('keeps drifting objects inside world bounds while they wander in 4D', () => {
     const world = new VoxelWorld4D(7);
-    const wildlife = createEntities(world).find((entity) => entity.kind === 'wildlife');
+    const drifter = createEntities(world).find((entity) => entity.kind === 'drifter');
 
-    expect(wildlife).toBeDefined();
+    expect(drifter).toBeDefined();
 
     for (let step = 0; step < 60; step += 1) {
-      wildlife?.update(0.1, step * 0.1, world);
+      drifter?.update(0.1, step * 0.1, world);
     }
 
-    const snapshot = wildlife?.snapshot();
+    const snapshot = drifter?.snapshot();
     expect(snapshot).toBeDefined();
 
     if (!snapshot) {
       return;
     }
 
-    expect(snapshot.position4.x).toBeGreaterThanOrEqual(world.bounds.minX + 1);
-    expect(snapshot.position4.x).toBeLessThanOrEqual(world.bounds.maxX - 1);
-    expect(snapshot.position4.y).toBeGreaterThanOrEqual(world.bounds.minY + 1);
-    expect(snapshot.position4.y).toBeLessThanOrEqual(world.bounds.maxY - 1);
-    expect(snapshot.position4.z).toBeGreaterThanOrEqual(world.bounds.minZ + 1);
-    expect(snapshot.position4.z).toBeLessThanOrEqual(world.bounds.maxZ - 1);
+    expect(snapshot.position4.x).toBeGreaterThanOrEqual(world.bounds.minX + 1.2);
+    expect(snapshot.position4.x).toBeLessThanOrEqual(world.bounds.maxX - 1.2);
+    expect(snapshot.position4.y).toBeGreaterThanOrEqual(world.bounds.minY + 1.2);
+    expect(snapshot.position4.y).toBeLessThanOrEqual(world.bounds.maxY - 1.2);
+    expect(snapshot.position4.z).toBeGreaterThanOrEqual(world.bounds.minZ + 1.2);
+    expect(snapshot.position4.z).toBeLessThanOrEqual(world.bounds.maxZ - 1.2);
     expect(snapshot.position4.w).toBeGreaterThanOrEqual(world.bounds.minW + 0.3);
     expect(snapshot.position4.w).toBeLessThanOrEqual(world.bounds.maxW - 0.3);
-    expect(snapshot.trail.length).toBeLessThanOrEqual(12);
+    expect(snapshot.trail.length).toBeLessThanOrEqual(22);
     expect(snapshot.trail.length).toBeGreaterThan(0);
   });
 });

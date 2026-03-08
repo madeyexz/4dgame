@@ -1,39 +1,54 @@
-import { clamp, vec4, type Vec4 } from './math4d.ts';
+import { vec4, type Vec4 } from './math4d.ts';
 
 export enum BlockMaterial {
-  Ember = 'ember',
-  Frost = 'frost',
-  Grass = 'grass',
-  Stone = 'stone',
+  Bulkhead = 'bulkhead',
+  Hull = 'hull',
+  Lumen = 'lumen',
+  Tissue = 'tissue',
 }
 
 export const MATERIAL_DEFS: Record<
   BlockMaterial,
   {
     baseColor: string;
+    emissive?: string;
+    emissiveIntensity?: number;
     metalness: number;
+    opacity: number;
     roughness: number;
   }
 > = {
-  [BlockMaterial.Ember]: {
-    baseColor: '#ff8b42',
-    metalness: 0.14,
-    roughness: 0.48,
+  [BlockMaterial.Bulkhead]: {
+    baseColor: '#2f3d57',
+    emissive: '#142339',
+    emissiveIntensity: 0.45,
+    metalness: 0.2,
+    opacity: 0.28,
+    roughness: 0.86,
   },
-  [BlockMaterial.Frost]: {
-    baseColor: '#8de8ff',
-    metalness: 0.1,
-    roughness: 0.32,
+  [BlockMaterial.Hull]: {
+    baseColor: '#84a8d8',
+    emissive: '#9fd7ff',
+    emissiveIntensity: 0.55,
+    metalness: 0.42,
+    opacity: 0.2,
+    roughness: 0.4,
   },
-  [BlockMaterial.Grass]: {
-    baseColor: '#7ccb6d',
+  [BlockMaterial.Lumen]: {
+    baseColor: '#93f1ff',
+    emissive: '#93f1ff',
+    emissiveIntensity: 1.35,
     metalness: 0.04,
-    roughness: 0.88,
+    opacity: 0.92,
+    roughness: 0.2,
   },
-  [BlockMaterial.Stone]: {
-    baseColor: '#738aa3',
-    metalness: 0.04,
-    roughness: 0.92,
+  [BlockMaterial.Tissue]: {
+    baseColor: '#ff9d8b',
+    emissive: '#ffb19b',
+    emissiveIntensity: 0.8,
+    metalness: 0.03,
+    opacity: 0.82,
+    roughness: 0.58,
   },
 };
 
@@ -56,9 +71,16 @@ export type WorldBounds4D = {
 const WORLD_DIMS = {
   height: 12,
   widthW: 7,
-  widthX: 20,
-  widthZ: 20,
+  widthX: 28,
+  widthZ: 36,
 };
+
+const BODY_ANCHORS = [
+  { x: -5, y: 4, z: -9 },
+  { x: 5, y: 4, z: -4 },
+  { x: -4, y: 7, z: 4 },
+  { x: 4, y: 7, z: 10 },
+];
 
 export class VoxelWorld4D {
   readonly bounds: WorldBounds4D = {
@@ -76,8 +98,7 @@ export class VoxelWorld4D {
   private readonly cellMap = new Map<string, BlockMaterial>();
 
   constructor(private readonly seed: number) {
-    this.generateTerrain();
-    this.addLandmarks();
+    this.generateShipFragment();
     this.rebuildCells();
   }
 
@@ -91,45 +112,116 @@ export class VoxelWorld4D {
     }
   }
 
-  private generateTerrain(): void {
+  private generateShipFragment(): void {
     for (let w = this.bounds.minW; w <= this.bounds.maxW; w += 1) {
-      for (let x = this.bounds.minX; x <= this.bounds.maxX; x += 1) {
-        for (let z = this.bounds.minZ; z <= this.bounds.maxZ; z += 1) {
-          const dune =
-            Math.sin((x + this.seed) * 0.37 + w * 0.84) * 1.65 +
-            Math.cos((z - this.seed) * 0.31 - w * 0.72) * 1.4;
-          const ridge = Math.sin((x + z) * 0.18 + w * 1.5) * 0.9;
-          const shelf = Math.cos((x - z) * 0.12 - w * 0.35) * 0.55;
-          const height = clamp(Math.floor(4.8 + dune + ridge + shelf), 2, 9);
+      this.addHull(w);
+      this.addDecksAndBulkheads(w);
+      this.addBodyCrossSections(w);
+      this.addPhaseLumen(w);
+    }
+  }
 
-          for (let y = 0; y <= height; y += 1) {
-            const material = this.pickMaterial(y, height, w);
-            this.addCell(vec4(x, y, z, w), material);
+  private addHull(w: number): void {
+    for (let x = -9; x <= 9; x += 1) {
+      for (let y = 1; y <= 10; y += 1) {
+        for (let z = -14; z <= 14; z += 1) {
+          const fracture = z > 8 && x > 3 && w >= 1;
+
+          if (fracture) {
+            continue;
           }
 
-          const crystalNoise = Math.sin(x * 0.61 + z * 0.27 + w * 1.43 + this.seed * 0.21);
+          const hullShape =
+            (x * x) / 81 +
+            ((y - 5.5) * (y - 5.5)) / 25 +
+            ((z + 1) * (z + 1)) / 196;
 
-          if (crystalNoise > 0.94) {
-            this.addCell(vec4(x, height + 1, z, w), BlockMaterial.Frost);
+          if (hullShape > 1.08) {
+            continue;
+          }
+
+          const shell =
+            hullShape > 0.84 ||
+            Math.abs(x) === 9 ||
+            y === 1 ||
+            y === 10 ||
+            z === -14 ||
+            z === 14;
+
+          if (shell) {
+            this.addCell(vec4(x, y, z, w), BlockMaterial.Hull);
           }
         }
       }
     }
   }
 
-  private addLandmarks(): void {
-    for (let w = this.bounds.minW; w <= this.bounds.maxW; w += 1) {
-      for (let y = 3; y <= 9; y += 1) {
-        this.addCell(vec4(0, y, 0, w), BlockMaterial.Ember);
-      }
+  private addDecksAndBulkheads(w: number): void {
+    const doorShift = ((w + this.seed) % 3) - 1;
+    const bulkheadSections = [-11, -5, 1, 7];
 
-      this.addCell(vec4(1, 4 + (w & 1), -3, w), BlockMaterial.Frost);
-      this.addCell(vec4(-1, 5 + ((w + 1) & 1), 3, w), BlockMaterial.Frost);
+    for (let z = -12; z <= 12; z += 1) {
+      for (let x = -7; x <= 7; x += 1) {
+        for (const y of [3, 6, 9]) {
+          if (Math.abs(x) <= 1 && z > -2 && z < 9) {
+            continue;
+          }
+
+          this.addCell(vec4(x, y, z, w), BlockMaterial.Bulkhead);
+        }
+      }
     }
 
-    for (let offset = -3; offset <= 3; offset += 1) {
-      this.addCell(vec4(-6, 6, offset * 2, offset), BlockMaterial.Ember);
-      this.addCell(vec4(6, 7, -offset * 2, offset), BlockMaterial.Ember);
+    for (const bulkheadZ of bulkheadSections) {
+      for (let x = -7; x <= 7; x += 1) {
+        for (let y = 2; y <= 9; y += 1) {
+          const doorway = Math.abs(x - doorShift) <= 1 && y >= 3 && y <= 6;
+
+          if (doorway) {
+            continue;
+          }
+
+          this.addCell(vec4(x, y, bulkheadZ, w), BlockMaterial.Bulkhead);
+        }
+      }
+    }
+  }
+
+  private addBodyCrossSections(w: number): void {
+    BODY_ANCHORS.forEach((anchor, index) => {
+      const phase = Math.sin((index + 1) * 0.8 + w * 0.95 + this.seed * 0.17);
+      const center = {
+        x: anchor.x + Math.round(Math.sin(w * 0.4 + index) * 1),
+        y: anchor.y,
+        z: anchor.z + Math.round(phase * 1),
+      };
+
+      for (let x = center.x - 1; x <= center.x + 1; x += 1) {
+        for (let y = center.y - 1; y <= center.y + 1; y += 1) {
+          for (let z = center.z - 2; z <= center.z + 2; z += 1) {
+            const dx = x - center.x;
+            const dy = y - center.y;
+            const dz = (z - center.z) * 0.6;
+            const distanceSq = dx * dx + dy * dy + dz * dz;
+
+            if (distanceSq <= 1.75) {
+              this.addCell(vec4(x, y, z, w), BlockMaterial.Tissue);
+            } else if (distanceSq <= 3.1 && Math.abs(dy) <= 1) {
+              this.addCell(vec4(x, y, z, w), BlockMaterial.Lumen);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  private addPhaseLumen(w: number): void {
+    const drift = Math.sin(w * 0.9 + this.seed * 0.13) * 1.6;
+
+    for (let z = -13; z <= 13; z += 1) {
+      const x = Math.round(Math.sin(z * 0.2 + drift) * 2);
+      const y = 5 + Math.round(Math.cos(z * 0.16 + w * 0.4) * 1);
+      this.addCell(vec4(x, y, z, w), BlockMaterial.Lumen);
     }
   }
 
@@ -148,17 +240,5 @@ export class VoxelWorld4D {
         position4: vec4(x, y, z, w),
       });
     }
-  }
-
-  private pickMaterial(y: number, height: number, w: number): BlockMaterial {
-    if (y === height) {
-      return Math.abs(w) >= 2 ? BlockMaterial.Frost : BlockMaterial.Grass;
-    }
-
-    if (y <= 1 || y < height - 2) {
-      return BlockMaterial.Stone;
-    }
-
-    return Math.abs(w) === 3 ? BlockMaterial.Frost : BlockMaterial.Stone;
   }
 }
