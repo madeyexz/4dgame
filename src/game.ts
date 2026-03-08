@@ -1,15 +1,16 @@
 import * as THREE from 'three';
 import {
-  applyViewTransform,
   clamp,
   distance4,
-  project4Dto3D,
-  sub4,
   type Orientation4D,
   type Projection3D,
   type Vec4,
   vec4,
 } from './engine/math4d.ts';
+import {
+  computeBlockBrightness,
+  projectRenderablePoint,
+} from './engine/render4d.ts';
 import {
   createEntities,
   type EntitySnapshot,
@@ -457,7 +458,7 @@ export class GameApp {
         return;
       }
 
-      const brightness = clamp(1.08 - Math.abs(projected.localW) * 0.12, 0.35, 1.1);
+      const brightness = computeBlockBrightness(projected.localW);
       this.workingColor.copy(meshState.tint).multiplyScalar(brightness);
       this.composeMatrix(projected, 0.92);
 
@@ -568,33 +569,7 @@ export class GameApp {
   }
 
   private projectPoint(point: Vec4): Projection3D | null {
-    const local = applyViewTransform(sub4(point, this.player.position4), this.player.orientation);
-
-    if (Math.abs(local.w) > 3.8) {
-      return null;
-    }
-
-    const spatialDistanceSq = local.x * local.x + local.y * local.y + local.z * local.z;
-
-    if (spatialDistanceSq > 44 * 44) {
-      return null;
-    }
-
-    const projected = project4Dto3D(local, this.player.projectionDistance);
-
-    if (!projected) {
-      return null;
-    }
-
-    if (projected.z > -0.3 || projected.z < -140) {
-      return null;
-    }
-
-    if (Math.abs(projected.x) > 80 || Math.abs(projected.y) > 60) {
-      return null;
-    }
-
-    return projected;
+    return projectRenderablePoint(point, this.player);
   }
 
   private updateHud(): void {
